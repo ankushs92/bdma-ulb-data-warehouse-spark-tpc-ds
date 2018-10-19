@@ -1,26 +1,25 @@
 import java.io.File
 import java.util.Properties
 
-import Config.{getClass, _}
+import Config._
 import com.typesafe.scalalogging.Logger
-import net.iharder.Base64.InputStream
-import org.apache.log4j.{Level, LogManager}
 import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
 
+import scala.collection.immutable.SortedMap
 import scala.io.Source
-
 
 
 object TcpDsBenchmark {
 
-  val cores = Runtime.getRuntime.availableProcessors
+  val EMPTY : String = ""
+  val cores: Int = Runtime.getRuntime.availableProcessors
   val logger = Logger(LoggerFactory.getLogger(TcpDsBenchmark.getClass))
 
   def main(args: Array[String]): Unit = {
 
     val spark = SparkSession.builder.appName("DB Warehouse Project SQL").master("local").getOrCreate
-    LogManager.getLogger("org").setLevel(Level.ERROR)
+//    LogManager.getLogger("org.apache.spark").setLevel(Level.ERROR)
 
     logger.info("Attempting to Start Apache Spark")
     val mysqlConnProperties = new Properties()
@@ -82,43 +81,65 @@ object TcpDsBenchmark {
     webSalesTable.createOrReplaceTempView(WEB_SALES)
     webSiteTable.createOrReplaceTempView(WEB_SITE)
 
-    var start = System.currentTimeMillis()
     val sparkSqlContext = spark.sqlContext
 
-    val sqlQueries = getQueries
+    val sqlQueriesMap = SortedMap(getQueriesMap.toSeq.sortBy(_._1):_*)
 
-    for((sqlQuery, index) <- sqlQueries.zipWithIndex) {
-      val queryNo = index + 40
-      var start = System.currentTimeMillis()
+    for((index, sqlQueries) <- sqlQueriesMap) {
+      val queryNo = index + 1
       logger.info ("Executing Query {}", queryNo)
-      val query = sparkSqlContext.sql(sqlQuery)
+      val start = System.currentTimeMillis()
+
+      for(sqlQuery <- sqlQueries) {
+        val dataFrame = sparkSqlContext.sql(sqlQuery)
+        dataFrame.show(1000000)
+      }
       val stop = System.currentTimeMillis()
       logger.info ("Time taken to execute query {} is {}", queryNo, stop-start )
-//      query.show()
     }
-
 
     logger.info("Stopping Apache Spark")
     spark.stop()
   }
 
-  val EMPTY : String = ""
-  private def getQueries: Seq[String] = {
-    val queriesDirectory = new File(getClass.getResource("/queries").getFile)
 
+  private def getQueriesMap : Map[Int, Seq[String]] = {
+    val queriesDirectory = new File(getClass.getResource("/queries").getFile)
     queriesDirectory.listFiles()
-          .map( file => Source.fromFile(file).getLines)
-          .map(lines => {
-            val stringBuilder = new StringBuilder
-            for(line <- lines) {
-              stringBuilder.append(line)
-              stringBuilder.append("\n")
+        .map(file => Source.fromFile(file).getLines.toList)
+        .map(lines => {
+          val stringBuilder = new StringBuilder
+          for(line <- lines) {
+            if(!line.startsWith("--")) {
+              stringBuilder.append(line).append("\n")
             }
-            stringBuilder.toString
-          })
-          .map(query => if (query.contains(";"))  query.replaceAll(";", EMPTY) else query)
-          .toSeq
+          }
+          stringBuilder.toString.stripSuffix("\n")
+        })
+        .map(query => {
+          if(query.contains(";")) {
+            query.split(";").toSeq
+          }
+          else {
+            Seq(query)
+          }
+        })
+        .map(queries => {
+          queries.map(query => if(query.contains(";")) query.replaceAll(";", EMPTY).trim else query.trim)
+        })
+       .zipWithIndex
+       .map( {
+          case (k, v) => (v, k)
+       })
+      .toMap
   }
+
+
+  private def toSeconds(ms : Long) : Long = {
+    ms / 1000
+  }
+
+
 
 
 }

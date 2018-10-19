@@ -4,7 +4,7 @@ version := "0.1"
 
 scalaVersion := "2.11.8"
 
-val sparkVersion = "2.2.0"
+val sparkVersion = "2.1.2"
 val scalaLoggingVersion = "3.9.0"
 val logbackVersion = "1.2.3"
 val mysqlVersion = "5.1.16"
