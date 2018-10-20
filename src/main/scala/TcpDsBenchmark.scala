@@ -3,6 +3,7 @@ import java.util.Properties
 
 import Config._
 import com.typesafe.scalalogging.Logger
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
 
@@ -18,8 +19,10 @@ object TcpDsBenchmark {
 
   def main(args: Array[String]): Unit = {
 
-    val spark = SparkSession.builder.appName("DB Warehouse Project SQL").master("local").getOrCreate
-//    LogManager.getLogger("org.apache.spark").setLevel(Level.ERROR)
+    val sparkConf = new SparkConf().setAppName("DB Warehouse Project SQL")
+    sparkConf.set("spark.sql.crossJoin.enabled", "true")
+
+    val spark = SparkSession.builder.config(sparkConf).master("local").getOrCreate
 
     logger.info("Attempting to Start Apache Spark")
     val mysqlConnProperties = new Properties()
@@ -94,8 +97,11 @@ object TcpDsBenchmark {
         val dataFrame = sparkSqlContext.sql(sqlQuery)
         dataFrame.show(1000000)
       }
+
       val stop = System.currentTimeMillis()
-      logger.info ("Time taken to execute query {} is {}", queryNo, stop-start )
+      val timeTakenMs = stop-start
+      val timeTakenSeconds = toSeconds(timeTakenMs)
+      logger.info ("Time taken statistics for Query {} : Milliseconds : {}, Seconds : {}", queryNo, timeTakenMs, timeTakenSeconds )
     }
 
     logger.info("Stopping Apache Spark")
@@ -109,37 +115,32 @@ object TcpDsBenchmark {
         .map(file => Source.fromFile(file).getLines.toList)
         .map(lines => {
           val stringBuilder = new StringBuilder
-          for(line <- lines) {
-            if(!line.startsWith("--")) {
-              stringBuilder.append(line).append("\n")
-            }
+          //Queries with comments was causing problems, therefore, when building the SQL String, we ignore all comments
+          for(line <- lines if !isSqlComment(line)) {
+            stringBuilder.append(line).append("\n")
           }
+          //The last new line character was also creating a problem, therefore we strip the sql query of a newline character at the very end
           stringBuilder.toString.stripSuffix("\n")
         })
-        .map(query => {
-          if(query.contains(";")) {
-            query.split(";").toSeq
-          }
-          else {
-            Seq(query)
-          }
-        })
+        //We have few cases where a single file has multiple sql queries. If we have any string that is not whitespace after a ';', then we confirm that we have multiple queries
+        .map(query =>  if(query.contains(";")) query.split(";").toSeq else Seq(query))
+        //We also need to strip every sql query of a ';'. This is done because Spark throws an error if there is a ';' present at end of query
         .map(queries => {
           queries.map(query => if(query.contains(";")) query.replaceAll(";", EMPTY).trim else query.trim)
         })
        .zipWithIndex
-       .map( {
+       .map({
           case (k, v) => (v, k)
        })
       .toMap
   }
 
-
-  private def toSeconds(ms : Long) : Long = {
-    ms / 1000
+  private def isSqlComment(line : String) : Boolean = {
+    if(line.startsWith("--")) true else false
   }
 
-
-
+  private def toSeconds(ms : Long) : Int = {
+    (ms / 1000).toInt
+  }
 
 }
