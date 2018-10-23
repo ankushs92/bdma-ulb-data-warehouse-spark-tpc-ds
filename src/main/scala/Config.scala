@@ -41,4 +41,5 @@ object Config {
     val INVENTORY_PARTITIONING_KEY = "inv_item_sk"
     val STORES_SALES_PARTITIONING_KEY = "ss_item_sk"
 
+
 }
