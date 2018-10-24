@@ -147,6 +147,7 @@ object TcpDsBenchmark {
     }
     val writer = CSVWriter.open(file)
     writer.writeAll(records.toList)
+    writer.close()
   }
 
   private def isSqlComment(line : String) : Boolean = {
